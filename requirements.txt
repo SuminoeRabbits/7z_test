@@ -1,0 +1,9 @@
+# 7z benchmark suite - Python dependencies
+# Currently no external Python packages required (stdlib only)
+# This file is provided for future extensibility and package management best practices.
+
+# To install from this file:
+#   python -m pip install -r requirements.txt
+#
+# To upgrade pip:
+#   python -m pip install --upgrade pip
