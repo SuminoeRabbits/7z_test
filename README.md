@@ -35,6 +35,67 @@ python3 aggregate_results.py --results-dir results --out-md results/aggregate.md
 
 ## Results Interpretation
 
+Each JSON result file contains comprehensive benchmark data:
+
+### JSON Structure
+
+```json
+{
+  "platform": { /* system info like CPU model, RAM, etc */ },
+  "7z": { "cmdline": "..." },
+  "params": { "mx": 5, "mmt": 4, "md": 26, "iterations": 1 },
+  "samples": [
+    {
+      "run": 1,
+      "elapsed_s": 24.5,
+      "returncode": 0,
+      "throughput_MB_s": null,
+      "benchmark": {
+        "benchmark_table": [
+          {
+            "dict": 22,
+            "compress": { "speed": 10763, "usage": 353, "r_u": 2965, "rating": 10471 },
+            "decompress": { "speed": 136498, "usage": 398, "r_u": 2927, "rating": 11645 }
+          },
+          /* ... more dictionary sizes 23-26 ... */
+        ],
+        "averages": {
+          "compress_speed": 9983, "compress_usage": 361, "compress_r_u": 2903, "compress_rating": 10472,
+          "decompress_speed": 132250, "decompress_usage": 398, "decompress_r_u": 2898, "decompress_rating": 11521
+        },
+        "totals": { "usage": 379, "r_u": 2900, "rating": 10997 },
+        "system_info": {
+          "ram_mb": 15973, "cpu_threads": 4, "benchmark_threads": 4,
+          "cpu_freq_1T": [1915, 1994, 1994, 1994, 1994, 1994, 1994]
+        },
+        "timing": {
+          "kernel": { "seconds": 0.9, "percent": 1 },
+          "user": { "seconds": 57.8, "percent": 96 },
+          "process": { "seconds": 58.7, "percent": 97 },
+          "global": { "seconds": 60.5, "percent": 100 }
+        }
+      },
+      "raw_log": "results/raw/20251116T155122Z_mx5_mmt4_run1.log"
+    }
+  ],
+  "stats": {
+    "elapsed": { "count": 1, "mean": 24.5, "median": 24.5, "stdev": 0.0 },
+    "throughput_MB_s": { "count": 0 }
+  }
+}
+```
+
+### Key Metrics
+
+Each dictionary size in the benchmark table contains:
+- **compress/decompress**:
+  - `speed`: KiB/s (compression/decompression throughput)
+  - `usage`: CPU usage percentage
+  - `r_u`: MIPS per thread
+  - `rating`: Total performance rating
+
+### Aggregate Output
+
 Output table columns:
 - **mx**: Compression level (1=min, 5=typ, 9=max)
 - **mmt**: Thread count

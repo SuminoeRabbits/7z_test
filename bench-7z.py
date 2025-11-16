@@ -49,6 +49,169 @@ def parse_throughput(text):
     return None
 
 
+def parse_7z_benchmark_output(text):
+    """
+    Parse 7z benchmark output and extract detailed metrics.
+    Returns a dict with:
+    - benchmark_table: list of dict with Dict, Speed, Usage, R/U, Rating for compress/decompress
+    - averages: dict with avg compress/decompress metrics
+    - totals: dict with total metrics
+    - system_info: dict with system info (RAM, CPU freqs, threads)
+    - timing: dict with kernel/user/process/global times
+    """
+    result = {
+        'benchmark_table': [],
+        'averages': {},
+        'totals': {},
+        'system_info': {},
+        'timing': {}
+    }
+    
+    lines = text.split('\n')
+    
+    # Parse system info (RAM, CPU threads, etc.)
+    for i, line in enumerate(lines):
+        if 'RAM size:' in line:
+            # Example: "RAM size:   15973 MB,  # CPU hardware threads:   4"
+            m = re.search(r'RAM size:\s+([0-9]+)\s+MB', line)
+            if m:
+                result['system_info']['ram_mb'] = int(m.group(1))
+            m = re.search(r'# CPU hardware threads:\s+(\d+)', line)
+            if m:
+                result['system_info']['cpu_threads'] = int(m.group(1))
+        
+        if 'RAM usage:' in line:
+            # Example: "RAM usage:    889 MB,  # Benchmark threads:      4"
+            m = re.search(r'RAM usage:\s+([0-9]+)\s+MB', line)
+            if m:
+                result['system_info']['ram_usage_mb'] = int(m.group(1))
+            m = re.search(r'# Benchmark threads:\s+(\d+)', line)
+            if m:
+                result['system_info']['benchmark_threads'] = int(m.group(1))
+        
+        # Parse CPU frequency (1T, 2T lines)
+        if 'CPU Freq' in line:
+            # Example: "1T CPU Freq (MHz):  1915  1994  1994  1994  1994  1994  1994"
+            match = re.match(r'(\d+T)\s+CPU Freq \(MHz\):\s+(.*)', line)
+            if match:
+                freqs = match.group(2).strip().split()
+                key = f'cpu_freq_{match.group(1)}'
+                result['system_info'][key] = [int(f.rstrip('%')) for f in freqs]
+        
+        # Parse timing info
+        if 'Kernel  Time' in line or 'User    Time' in line or 'Process Time' in line or 'Global  Time' in line:
+            # Example: "Kernel  Time =     0.900 =    1%"
+            m = re.match(r'(\w+)\s+Time\s+=\s+([\d.]+)\s+=\s+(\d+)%', line)
+            if m:
+                result['timing'][m.group(1).lower()] = {
+                    'seconds': float(m.group(2)),
+                    'percent': int(m.group(3))
+                }
+    
+    # Parse benchmark table
+    # Find the header line
+    header_idx = -1
+    for i, line in enumerate(lines):
+        if 'Dict' in line and 'Speed' in line and 'Usage' in line:
+            header_idx = i
+            break
+    
+    if header_idx >= 0:
+        # Parse from header onwards
+        i = header_idx + 1
+        while i < len(lines):
+            line = lines[i]
+            
+            # Skip header sub-lines and empty lines before data starts
+            if line.strip() == '' or 'KiB/s' in line or 'Compressing' in line:
+                i += 1
+                continue
+            
+            # Stop at separator
+            if '--' in line and '|' in line:
+                i += 1
+                continue
+            
+            # Parse average line
+            if line.startswith('Avr:'):
+                # Split by | to get compress and decompress parts
+                parts = line.split('|')
+                if len(parts) >= 1:
+                    # Compress metrics
+                    compress_nums = re.findall(r'\d+', parts[0][4:])
+                    if len(compress_nums) >= 4:
+                        result['averages']['compress_speed'] = int(compress_nums[0])
+                        result['averages']['compress_usage'] = int(compress_nums[1])
+                        result['averages']['compress_r_u'] = int(compress_nums[2])
+                        result['averages']['compress_rating'] = int(compress_nums[3])
+                
+                if len(parts) >= 2:
+                    # Decompress metrics
+                    decompress_nums = re.findall(r'\d+', parts[1])
+                    if len(decompress_nums) >= 4:
+                        result['averages']['decompress_speed'] = int(decompress_nums[0])
+                        result['averages']['decompress_usage'] = int(decompress_nums[1])
+                        result['averages']['decompress_r_u'] = int(decompress_nums[2])
+                        result['averages']['decompress_rating'] = int(decompress_nums[3])
+                i += 1
+                continue
+            
+            # Parse total line
+            if line.startswith('Tot:'):
+                m = re.match(r'Tot:\s+([\d\s%]+)', line)
+                if m:
+                    numbers = re.findall(r'[\d.]+%?', m.group(1))
+                    if len(numbers) >= 3:
+                        result['totals']['usage'] = int(numbers[0])
+                        result['totals']['r_u'] = int(numbers[1])
+                        result['totals']['rating'] = int(numbers[2])
+                i += 1
+                continue
+            
+            # Parse data lines (dictionary size lines)
+            # Example: "22:       6185   100   6040   6018  |      34848   100   3001   3000"
+            m = re.match(r'^(\d+):\s+(.*)', line)
+            if m:
+                dict_size = m.group(1)
+                # Split by | to get compress and decompress parts
+                parts = m.group(2).split('|')
+                row = {'dict': int(dict_size)}
+                
+                if len(parts) >= 1:
+                    # Parse compress metrics
+                    compress_nums = parts[0].strip().split()
+                    if len(compress_nums) >= 4:
+                        row['compress'] = {
+                            'speed': int(compress_nums[0]),
+                            'usage': int(compress_nums[1]),
+                            'r_u': int(compress_nums[2]),
+                            'rating': int(compress_nums[3])
+                        }
+                
+                if len(parts) >= 2:
+                    # Parse decompress metrics
+                    decompress_nums = parts[1].strip().split()
+                    if len(decompress_nums) >= 4:
+                        row['decompress'] = {
+                            'speed': int(decompress_nums[0]),
+                            'usage': int(decompress_nums[1]),
+                            'r_u': int(decompress_nums[2]),
+                            'rating': int(decompress_nums[3])
+                        }
+                
+                result['benchmark_table'].append(row)
+                i += 1
+                continue
+            
+            # Stop if we hit non-data line after table started
+            if line.strip() and not line[0].isspace():
+                break
+            
+            i += 1
+    
+    return result
+
+
 def collect_platform_info():
     info = {}
     info['os'] = platform.platform()
@@ -147,7 +310,7 @@ def main():
     args.iterations = iterations
 
     os.makedirs(args.outdir, exist_ok=True)
-    timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
 
     platform_info = collect_platform_info()
 
@@ -173,8 +336,11 @@ def main():
             samples.append({'run': i, 'elapsed_s': None, 'returncode': None, 'throughput_MB_s': None, 'note': 'timeout'})
             continue
 
-        # Try to parse throughput
+        # Try to parse throughput (legacy)
         tp = parse_throughput(out + '\n' + err)
+
+        # Parse detailed benchmark metrics
+        benchmark_data = parse_7z_benchmark_output(out)
 
         # Save raw output for this iteration
         raw_fname = os.path.join(raw_dir, f'{timestamp}_mx{args.mx}_mmt{args.mmt}_run{i}.log')
@@ -189,6 +355,7 @@ def main():
             'elapsed_s': round(elapsed, 6) if elapsed is not None else None,
             'returncode': rc,
             'throughput_MB_s': round(tp, 6) if tp is not None else None,
+            'benchmark': benchmark_data,
             'raw_log': raw_fname if not args.keep_raw else None,
         }
         samples.append(sample)
